@@ -1,0 +1,6 @@
+lib/
+Release/
+Debug/
+NMS-MP-DLL/x64/
+NMS-MP-DLL/Release/
+NMS-MP-DLL/Debug/
