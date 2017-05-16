@@ -25,9 +25,15 @@
 #include "imgui_impl.h"
 #include <zmq.hpp>
 #include <json/json.h>
+#include <glm/common.hpp>
+#include <glm/matrix.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/transform.hpp>
 
 // First party includes :)
 #include <PlayerData.h>
+#include "drawFuncs.h"
 
 static PlayerData me;
 
@@ -36,6 +42,7 @@ static PlayerData me;
 
 // Functions to retrieve various bits from the game memory, ie. the juicy stuff.
 void getCurrentPlayerPosition(float* in);
+void getCurrentPlayerRotations(float* in);
 void getCurrentRegionName(char* out_regName);
 
 // Define types for our functions we wish to detour
@@ -52,6 +59,9 @@ int WINAPI DetourGlDrawArrays(GLenum mode, GLint first, GLsizei count);
 bool haveRenderedInWorldThisFrame = false;
 
 // Client-Server variables
+char ip[30] = "127.0.0.1:5258";
+int tryConnect = 0;
+char name[30] = "Wanderer";
 HANDLE t_handle;
 HANDLE t_mouse;
 HHOOK mousehook;
@@ -74,6 +84,19 @@ void drawOverlay();
 int overlayOpenState = 0;
 int lastOverlayOpenKeyState = 0;
 HDC nms_window;
+int w = 0, h = 0;
+int overlayX = 250, overlayY = 350;
+
+// Keycodes for the overlay
+bool	 prevKeyStates[]{ false, false, false, false, false, false, false, false, false, false, false, false };
+bool	  keyStates[] = { false, false, false, false, false, false, false, false, false, false, false, false };
+int	        vkCodes[] = { 0x30,  0x31,  0x32,  0x33,  0x34,  0x35,  0x36,  0x37,  0x38,  0x39,  VK_OEM_PERIOD , VK_OEM_1 };
+char       keyChars[] = {'0',	 '1',	'2',   '3',   '4',   '5',   '6',   '7',   '8',   '9',   '.', ':'};
+int numKeys = 12;
+int	        vkCodesControl[] = {  VK_BACK };
+bool      keyControlStates[] = { false };
+bool  prevKeyControlStates[] = { false };
+int numControlKeys = 1;
 
 //Game Variables, Memory addresses, and other working variables
 HANDLE nmsHandle;
@@ -87,8 +110,9 @@ int playerSystemPtr = 0;
 char playerSystemName[30] = "";
 float playerPosition[3];
 float playerPositionLast[3];
-int mousePos[2] = { 0,0 };
-int wWidth = 0, wHeight = 0;
+
+//Custom rendering functions
+void drawTest(float* pQ, float x, float y, float z);
 
 // Used for working out velocity and display framerate
 std::chrono::milliseconds deltaTime;

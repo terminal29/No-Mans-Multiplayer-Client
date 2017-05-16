@@ -228,27 +228,17 @@ bool    ImGui_Init(HDC hdc)
 	window_HDC = hdc;
 
 	ImGuiIO& io = ImGui::GetIO();
-	/*
-	io.KeyMap[ImGuiKey_Tab] = VK_TAB;                         // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
+	
+	io.KeyMap[ImGuiKey_Tab] = VK_TAB;                        // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
 	io.KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
 	io.KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
 	io.KeyMap[ImGuiKey_UpArrow] = VK_UP;
 	io.KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
-	io.KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
-	io.KeyMap[ImGuiKey_PageDown] = VK_NEXT;
-	io.KeyMap[ImGuiKey_Home] = VK_HOME;
-	io.KeyMap[ImGuiKey_End] = VK_END;
-	io.KeyMap[ImGuiKey_Delete] = VK_DELETE;
-	io.KeyMap[ImGuiKey_Backspace] = VK_BACK;
 	io.KeyMap[ImGuiKey_Enter] = VK_RETURN;
 	io.KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
-	io.KeyMap[ImGuiKey_A] = 0x41;
-	io.KeyMap[ImGuiKey_C] = 0x43;
-	io.KeyMap[ImGuiKey_V] = 0x56;
-	io.KeyMap[ImGuiKey_X] = 0x58;
-	io.KeyMap[ImGuiKey_Y] = 0x59;
-	io.KeyMap[ImGuiKey_Z] = 0x5A;
-	*/
+	io.KeyMap[ImGuiKey_Backspace] = VK_BACK;
+
+	
 	io.RenderDrawListsFn = ImGui_Impl_RenderDrawLists;       // Alternatively you can set this to NULL and call ImGui::GetDrawData() after ImGui::Render() to get the same ImDrawData pointer.
 	io.SetClipboardTextFn = NULL;
 	io.GetClipboardTextFn = NULL;

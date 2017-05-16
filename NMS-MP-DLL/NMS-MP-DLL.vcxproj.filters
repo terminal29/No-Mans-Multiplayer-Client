@@ -50,5 +50,11 @@
     <ClInclude Include="..\lib\imgui-1.49\imgui-1.49\imgui_internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="drawFuncs.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\MP Server\NoMansMultiplayerServer\NoMansMultiplayerServer\PlayerData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
