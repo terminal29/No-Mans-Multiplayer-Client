@@ -266,30 +266,32 @@ void drawTest(float* pQ, float x, float y, float z) {
 
 	// Model matrix : an identity matrix (model will be at the origin)
 	glm::mat4 Model = glm::translate(glm::mat4(1.0f), glm::vec3(x, y, z));
+	//Model = glm::lookAt(glm::vec3(x, y, z), glm::vec3(me.getPos()[0], me.getPos()[1], me.getPos()[2]), glm::vec3(0, 1, 0));
 
 	//Model = glm::translate(Model, glm::vec3(0, 0, -1));
 	// Our ModelViewProjection : multiplication of our 3 matrices
-	glm::mat4 mvp = projectionMatrix * View * Model; // Remember, matrix multiplication is the other way around
-
+	glm::mat4 modelviewMatrix = View * Model; // Remember, matrix multiplication is the other way around
 
 	GLchar* vertexsource = "#version 410 compatibility\n	\
-		uniform mat4 MVP;							\
+		uniform mat4 MV;							\
+		uniform mat4 P;								\
+		uniform sampler2D tex;						\
 		in  vec3 in_Position;						\
-		in  vec3 in_Color;							\
-		out vec3 ex_Color;							\
-		void main(void) {	\
-			gl_Position = MVP * vec4(in_Position.x, in_Position.y, in_Position.z, 1.0);\
-			ex_Color = in_Color;					\
+		in  vec2 uv;								\
+		out vec4 ex_Color;							\
+		void main(void) {							\
+			gl_Position = P * (MV * vec4(0.0, 0.0, 0.0, 1.0) + vec4(in_Position.x, in_Position.y, 0.0, 0.0));\
+			ex_Color = texture(tex,uv);				\
 		}";
 
 	GLchar* fragmentsource = "#version 410 compatibility\n	\
 			precision highp float;					\
 													\
-		in  vec3 ex_Color;							\
+		in  vec4 ex_Color;							\
 		out vec4 gl_FragColor;						\
 													\
 		void main(void) {							\
-			gl_FragColor = vec4(ex_Color, 1.0);		\
+			gl_FragColor = ex_Color;		\
 		}";
 
 	int i; /* Simple iterator */
@@ -301,7 +303,7 @@ void drawTest(float* pQ, float x, float y, float z) {
 	char *fragmentInfoLog;
 	char *shaderProgramInfoLog;
 
-	float scale = 0.5;
+	float scale = 0.75;
 
 	/* We're going to create a simple diamond made from lines */
 	const GLfloat diamond[4][2] = {
@@ -310,12 +312,20 @@ void drawTest(float* pQ, float x, float y, float z) {
 		{ scale, scale }, /* Bottom point */
 		{ -scale, scale } }; /* Left point */
 
-	const GLfloat colors[4][3] = {
-		{ 1.0,  0.0,  0.0 }, /* Red */
-		{ 0.0,  1.0,  0.0 }, /* Green */
-		{ 0.0,  0.0,  1.0 }, /* Blue */
-		{ 1.0,  1.0,  1.0 } }; /* White */
+	const GLfloat uv[4][3] = {
+		{ 0.0,  0.0},
+		{ 0.0,  1.0},
+		{ 1.0,  1.0},
+		{ 0.0,  1.0} };
 
+	GLuint Atlas_Tex;
+	glGenTextures(1, &Atlas_Tex);
+	int width = 64, height = 64;
+	unsigned char image[64*64];
+	//std::fill_n(image, 64 * 64, 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, Atlas_Tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
 
 							   /* These are handles used to reference the shaders */
 	GLuint vertexshader, fragmentshader;
@@ -350,15 +360,13 @@ void drawTest(float* pQ, float x, float y, float z) {
 
 	/* Copy the color data from colors to our buffer */
 	/* 12 * sizeof(GLfloat) is the size of the colors array, since it contains 12 GLfloat values */
-	glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(GLfloat), colors, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(uv), uv, GL_STATIC_DRAW);
 
 	/* Specify that our color data is going into attribute index 1, and contains three floats per vertex */
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glVertexAttribPointer(1, 3, GL_INT, GL_FALSE, 0, 0);
 
 	/* Enable attribute index 1 as being used */
 	glEnableVertexAttribArray(1);
-
-
 
 	/* Create an empty vertex shader handle */
 	vertexshader = glCreateShader(GL_VERTEX_SHADER);
@@ -427,7 +435,7 @@ void drawTest(float* pQ, float x, float y, float z) {
 	/* Bind attribute index 0 (coordinates) to in_Position and attribute index 1 (color) to in_Color */
 	/* Attribute locations must be setup before calling glLinkProgram. */
 	glBindAttribLocation(shaderprogram, 0, "in_Position");
-	glBindAttribLocation(shaderprogram, 1, "in_Color");
+	glBindAttribLocation(shaderprogram, 1, "uv");
 
 	/* Link our program */
 	/* At this stage, the vertex and fragment programs are inspected, optimized and a binary code is generated for the shader. */
@@ -460,9 +468,14 @@ void drawTest(float* pQ, float x, float y, float z) {
 	glUseProgram(shaderprogram);
 
 	// Update the uniforms AFTER glUseProgram
-	GLuint mvp_handle = glGetUniformLocation(shaderprogram, "MVP");
-	glUniformMatrix4fv(mvp_handle, 1, GL_FALSE, &mvp[0][0]);
+	GLuint modelview_handle = glGetUniformLocation(shaderprogram, "MV");
+	GLuint projection_handle = glGetUniformLocation(shaderprogram, "P");
+	glUniformMatrix4fv(modelview_handle, 1, GL_FALSE, &modelviewMatrix[0][0]);
+	glUniformMatrix4fv(projection_handle, 1, GL_FALSE, &projectionMatrix[0][0]);
 
+	//Load in our texture
+	GLuint texture_handle = glGetUniformLocation(shaderprogram, "tex");
+	glUniform1i(texture_handle, 0);
 
 	/* Invoke glDrawArrays telling that our data is a line loop and we want to draw 2-4 vertexes */
 	glDrawArrays(GL_QUADS, 0, 4);
