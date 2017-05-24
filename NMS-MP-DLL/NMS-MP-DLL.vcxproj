@@ -25,15 +25,18 @@
     <ClCompile Include="..\lib\imgui-1.49\imgui-1.49\imgui.cpp" />
     <ClCompile Include="..\lib\imgui-1.49\imgui-1.49\imgui_draw.cpp" />
     <ClCompile Include="imgui_impl.cpp" />
+    <ClCompile Include="lodepng.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\MP Server\NoMansMultiplayerServer\NoMansMultiplayerServer\PlayerData.h" />
     <ClInclude Include="..\lib\imgui-1.49\imgui-1.49\imconfig.h" />
     <ClInclude Include="..\lib\imgui-1.49\imgui-1.49\imgui_internal.h" />
-    <ClInclude Include="drawFuncs.h" />
+    <ClInclude Include="game_value.h" />
     <ClInclude Include="imgui_impl.h" />
+    <ClInclude Include="lodepng.h" />
     <ClInclude Include="main.h" />
+    <ClInclude Include="game_render.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{B9A3DB41-7104-4DA7-AE3E-F83FC82A1830}</ProjectGuid>

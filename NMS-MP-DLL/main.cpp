@@ -1,52 +1,6 @@
 ﻿
 #include "main.h"
 
-void getCurrentPlayerPosition(float* out_floatArr) {
-	float p[3];
-
-	memcpy(&p[0], (float*)((char*)nmsAddr + posXOffs), sizeof(float));
-	memcpy(&p[1], (float*)((char*)nmsAddr + posXOffs + sizeof(float)), sizeof(float));
-	memcpy(&p[2], (float*)((char*)nmsAddr + posXOffs + 2*sizeof(float)), sizeof(float));
-
-	memcpy(out_floatArr, &p[0], sizeof(p));
-}
-
-void getCurrentPlayerRotations(float* out_floatArr) {
-	float p[9];
-	//13,14,15 16,17,18 19,20,21
-
-	memcpy(&p[0], (float*)((char*)nmsAddr + posXOffs + 13 * sizeof(float)), sizeof(float));
-	memcpy(&p[1], (float*)((char*)nmsAddr + posXOffs + 14 * sizeof(float)), sizeof(float));
-	memcpy(&p[2], (float*)((char*)nmsAddr + posXOffs + 15 * sizeof(float)), sizeof(float));
-	memcpy(&p[3], (float*)((char*)nmsAddr + posXOffs + 16 * sizeof(float)), sizeof(float));
-	memcpy(&p[4], (float*)((char*)nmsAddr + posXOffs + 17 * sizeof(float)), sizeof(float));
-	memcpy(&p[5], (float*)((char*)nmsAddr + posXOffs + 18 * sizeof(float)), sizeof(float));
-	memcpy(&p[6], (float*)((char*)nmsAddr + posXOffs + 19 * sizeof(float)), sizeof(float));
-	memcpy(&p[7], (float*)((char*)nmsAddr + posXOffs + 20 * sizeof(float)), sizeof(float));
-	memcpy(&p[8], (float*)((char*)nmsAddr + posXOffs + 21 * sizeof(float)), sizeof(float));
-
-	memcpy(out_floatArr, &p[0], sizeof(p));
-}
-
-void getCurrentRegionName(char* out_sysName) {
-	int* sysAddr;
-	int sysNameLength = 30;
-	__try {
-		memcpy(&sysAddr, (void*)((char*)nmsAddr + playerSystemBase), sizeof(sysAddr));
-		memcpy(&sysAddr, (void*)((char*)sysAddr + psOffsets[0]), sizeof(sysAddr));
-		memcpy(&sysAddr, (void*)((char*)sysAddr + psOffsets[1]), sizeof(sysAddr));
-		memcpy(&sysAddr, (void*)((char*)sysAddr + psOffsets[2]), sizeof(sysAddr));
-		memcpy(&sysAddr, (void*)((char*)sysAddr + psOffsets[3]), sizeof(sysAddr));
-		memcpy(out_sysName, (char*)((char*)sysAddr + psOffsets[4]), sizeof(char) * (sysNameLength - 1));
-		out_sysName[sysNameLength - 1] = '\0';
-
-		// This is here because while the game is loading in the system name is junk so we need to limit it ourselves or it will never terminate.
-	}__except(EXCEPTION_EXECUTE_HANDLER){
-		// Name probably hasn't been loaded yet. User began the execution at the difficulty select screen, the bastard!
-		strcpy(out_sysName, "nil");
-	}
-}
-
 void safeSetOthers(std::vector<PlayerData> newOthers) {
 	std::lock_guard<std::mutex> lock(mtx);
 	others = newOthers;
@@ -61,64 +15,122 @@ std::vector<PlayerData> safeGetOthers() {
 DWORD WINAPI ClientThread(LPVOID)
 {
 #ifdef DO_SERVER
-	while (tryConnect == 0) {
-		Sleep(1000);
-	}
-	// Attempt to connect to the server
 	zmq::context_t context(1);
-	zmq::socket_t socket(context, ZMQ_REQ);
-	std::stringstream m;
-	m << "tcp://" << ip;
-	socket.connect(m.str().c_str());
+	
+
 	while (true) {
-		Sleep(50);
-		// Send a copy of our PlayerData to the server
-		me.setName(name);
-		std::string outgoingString = me.getJSONString();
-		zmq::message_t outgoing(outgoingString.size());
-		memcpy(outgoing.data(), outgoingString.c_str(), outgoingString.size());
-		socket.send(outgoing);
 
-		// Get the reply.
-		zmq::message_t incoming;
-		socket.recv(&incoming);
-		std::string incomingString = std::string(static_cast<char*>(incoming.data()), incoming.size());
-		connectStatus = true;
+		// Wait until the user asks to connect to a server
+		while (tryConnect == 0) {
+			Sleep(1000);
+		}
 
-		// Parse the reply
-		Json::Reader reader;
-		Json::Value jResponse;
-		bool parseResult = reader.parse(incomingString, jResponse);
-		if (parseResult) {
-			if (jResponse.isMember("nil")) { 
-				//The last message we sent was invalid for whatever reason
-			}
-			else if (jResponse.isMember("you") && jResponse.isMember("others")) {
-				if (me.getId() != jResponse["you"]["id"].asInt()) { 
-					//Server has assigned us a new id
-					std::cout << "My new ID is " << jResponse["you"]["id"].asInt() << std::endl;
-					me.setId(jResponse["you"]["id"].asInt());
+		zmq::socket_t socket(context, ZMQ_REQ);
+		// Tell ZMQ to give up if we lose connection for 1 second
+		socket.setsockopt(ZMQ_RCVTIMEO, 1000);
+		socket.setsockopt(ZMQ_LINGER, 0);
+
+		// Get ip that the user entered
+		std::stringstream m;
+		m << "tcp://" << ip;
+
+		try {
+			socket.connect(m.str().c_str());
+			connectStatus = true;
+		}
+		catch (zmq::error_t t) {
+			connectStatus = false;
+		}
+		
+		while (connectStatus && tryConnect) {
+
+			// Give the server a break between packets
+			Sleep(50);
+
+			// Update our name in case the user has entered something new
+			me.setName(name);
+
+			// Construct our Player Data string
+			std::string outgoingString = me.getJSONString();
+
+			// Create message with length
+			zmq::message_t outgoing(outgoingString.size());
+
+			// Copy Player Data into message
+			memcpy(outgoing.data(), outgoingString.c_str(), outgoingString.size());
+
+			int success = false;
+			// Attempt to send it to the server
+				try {
+					success = socket.send(outgoing);
 				}
-				// TODO: optimise this
-				std::vector<PlayerData> players;
-				Json::Value jPlayers = jResponse["others"];
-				for (Json::ValueIterator iter = jPlayers.begin(); iter != jPlayers.end(); iter++) {
-					PlayerData otherPlayer;
-					int parseResult = PlayerData::fromJSONString(&otherPlayer, iter->toStyledString());
-					if (parseResult) {
-						players.push_back(otherPlayer);
+				catch (zmq::error_t t) {
+					connectStatus = false;
+					break;
+				}
+				if (success == false) {
+					connectStatus = false;
+					break;
+				}
+			//
+
+			// Create incoming message
+			zmq::message_t incoming;
+			
+			// Attempt to receive it
+				try {
+					success = socket.recv(&incoming);
+				}
+				catch (zmq::error_t t) {
+					connectStatus = false;
+					break;
+				}
+				if (success == false) {
+					connectStatus = false;
+					break;
+				}
+			// Copy data to a string
+			std::string incomingString = std::string(static_cast<char*>(incoming.data()), incoming.size());
+
+			// Set up Json reader
+			Json::Reader reader;
+			Json::Value jResponse;
+
+			// Read server response
+			bool parseResult = reader.parse(incomingString, jResponse);
+			if (parseResult) {
+
+				// If the servers response is 'nil'
+				if (jResponse.isMember("nil")) {
+					//The last message we sent was invalid for whatever reason
+				}
+
+				// If the servers response is valid
+				else if (jResponse.isMember("you") && jResponse.isMember("others")) {
+
+					//Get our new ID if we have a new one
+					if (me.getId() != jResponse["you"]["id"].asInt()) {
+						me.setId(jResponse["you"]["id"].asInt());
 					}
+
+					// TODO: optimise this
+					// Iterate through all others in the list and add them to this current frame's players
+					std::vector<PlayerData> players;
+					Json::Value jPlayers = jResponse["others"];
+					for (Json::ValueIterator iter = jPlayers.begin(); iter != jPlayers.end(); iter++) {
+						PlayerData otherPlayer;
+						int parseResult = PlayerData::fromJSONString(&otherPlayer, iter->toStyledString());
+						if (parseResult) {
+							players.push_back(otherPlayer);
+						}
+					}
+					safeSetOthers(players);
 				}
-				safeSetOthers(players);
-			}
-			else {
-				// We connected to the wrong server? idk this should never happen
-			}
-		}
-		else {
-			// Do nothing. The server's response is invalid, so just recycle last frames local list.
-		}
-	}
+			} // parseResult
+		} // isConnected
+		socket.close();
+
+	} // true
 #endif DO_SERVER
 	return 1;
 }
@@ -238,274 +250,14 @@ void drawOverlay() {
 	ImGui::Render();
 }
 
-void drawTest(float* pQ, float x, float y, float z) {
-
-	HWND hwnd = WindowFromDC(nms_window);
-	RECT windowRect;
-	GetWindowRect(hwnd, &windowRect);
-	w = windowRect.right - windowRect.left;
-	h = windowRect.bottom - windowRect.top;
-
-	glm::vec3 Xax = { pQ[0], pQ[1], pQ[2] };
-	glm::vec3 Yax = { -pQ[3], -pQ[4], -pQ[5] };
-	glm::vec3 Zax = { -pQ[6], -pQ[7], -pQ[8] };
-	glm::vec3 pos = { me.getPos()[0], me.getPos()[1], me.getPos()[2] };
-
-	glm::mat4 View = { Xax.x, Yax.x, Zax.x, 0,
-		Xax.y, Yax.y, Zax.y, 0,
-		Xax.z, Yax.z, Zax.z, 0,
-		-glm::dot(pos, Xax), -glm::dot(pos, Yax), -glm::dot(pos, Zax), 1 };
-
-
-	glm::mat4 projectionMatrix = glm::perspective(
-		glm::radians(45.0f),         // The horizontal Field of View, in degrees : the amount of "zoom". Think "camera lens". Usually between 90° (extra wide) and 30° (quite zoomed in)
-		(float)w / h, // Aspect Ratio. Depends on the size of your window. Notice that 4/3 == 800/600 == 1280/960, sounds familiar ?
-		0.1f,        // Near clipping plane. Keep as big as possible, or you'll get precision issues.
-		1000.0f       // Far clipping plane. Keep as little as possible.
-	);
-
-	// Model matrix : an identity matrix (model will be at the origin)
-	glm::mat4 Model = glm::translate(glm::mat4(1.0f), glm::vec3(x, y, z));
-	//Model = glm::lookAt(glm::vec3(x, y, z), glm::vec3(me.getPos()[0], me.getPos()[1], me.getPos()[2]), glm::vec3(0, 1, 0));
-
-	//Model = glm::translate(Model, glm::vec3(0, 0, -1));
-	// Our ModelViewProjection : multiplication of our 3 matrices
-	glm::mat4 modelviewMatrix = View * Model; // Remember, matrix multiplication is the other way around
-
-	GLchar* vertexsource = "#version 410 compatibility\n	\
-		uniform mat4 MV;							\
-		uniform mat4 P;								\
-		uniform sampler2D tex;						\
-		in  vec3 in_Position;						\
-		in  vec2 uv;								\
-		out vec4 ex_Color;							\
-		void main(void) {							\
-			gl_Position = P * (MV * vec4(0.0, 0.0, 0.0, 1.0) + vec4(in_Position.x, in_Position.y, 0.0, 0.0));\
-			ex_Color = texture(tex,uv);				\
-		}";
-
-	GLchar* fragmentsource = "#version 410 compatibility\n	\
-			precision highp float;					\
-													\
-		in  vec4 ex_Color;							\
-		out vec4 gl_FragColor;						\
-													\
-		void main(void) {							\
-			gl_FragColor = ex_Color;		\
-		}";
-
-	int i; /* Simple iterator */
-	GLuint vao, vbo[2]; /* Create handles for our Vertex Array Object and two Vertex Buffer Objects */
-	int IsCompiled_VS, IsCompiled_FS;
-	int IsLinked;
-	int maxLength;
-	char *vertexInfoLog;
-	char *fragmentInfoLog;
-	char *shaderProgramInfoLog;
-
-	float scale = 0.75;
-
-	/* We're going to create a simple diamond made from lines */
-	const GLfloat diamond[4][2] = {
-		{ -scale, -scale }, /* Top point */
-		{ scale, -scale }, /* Right point */
-		{ scale, scale }, /* Bottom point */
-		{ -scale, scale } }; /* Left point */
-
-	const GLfloat uv[4][3] = {
-		{ 0.0,  0.0},
-		{ 0.0,  1.0},
-		{ 1.0,  1.0},
-		{ 0.0,  1.0} };
-
-	GLuint Atlas_Tex;
-	glGenTextures(1, &Atlas_Tex);
-	int width = 64, height = 64;
-	unsigned char image[64*64];
-	//std::fill_n(image, 64 * 64, 0);
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, Atlas_Tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
-
-							   /* These are handles used to reference the shaders */
-	GLuint vertexshader, fragmentshader;
-
-	/* This is a handle to the shader program */
-	GLuint shaderprogram;
-
-	/* Allocate and assign a Vertex Array Object to our handle */
-	glGenVertexArrays(1, &vao);
-
-	/* Bind our Vertex Array Object as the current used object */
-	glBindVertexArray(vao);
-
-	/* Allocate and assign two Vertex Buffer Objects to our handle */
-	glGenBuffers(2, vbo);
-
-	/* Bind our first VBO as being the active buffer and storing vertex attributes (coordinates) */
-	glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
-
-	/* Copy the vertex data from diamond to our buffer */
-	/* 8 * sizeof(GLfloat) is the size of the diamond array, since it contains 8 GLfloat values */
-	glBufferData(GL_ARRAY_BUFFER, 8 * sizeof(GLfloat), diamond, GL_STATIC_DRAW);
-
-	/* Specify that our coordinate data is going into attribute index 0, and contains two floats per vertex */
-	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-	/* Enable attribute index 0 as being used */
-	glEnableVertexAttribArray(0);
-
-	/* Bind our second VBO as being the active buffer and storing vertex attributes (colors) */
-	glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
-
-	/* Copy the color data from colors to our buffer */
-	/* 12 * sizeof(GLfloat) is the size of the colors array, since it contains 12 GLfloat values */
-	glBufferData(GL_ARRAY_BUFFER, sizeof(uv), uv, GL_STATIC_DRAW);
-
-	/* Specify that our color data is going into attribute index 1, and contains three floats per vertex */
-	glVertexAttribPointer(1, 3, GL_INT, GL_FALSE, 0, 0);
-
-	/* Enable attribute index 1 as being used */
-	glEnableVertexAttribArray(1);
-
-	/* Create an empty vertex shader handle */
-	vertexshader = glCreateShader(GL_VERTEX_SHADER);
-
-	/* Send the vertex shader source code to GL */
-	/* Note that the source code is NULL character terminated. */
-	/* GL will automatically detect that therefore the length info can be 0 in this case (the last parameter) */
-	glShaderSource(vertexshader, 1, (const GLchar**)&vertexsource, 0);
-
-	/* Compile the vertex shader */
-	glCompileShader(vertexshader);
-
-	glGetShaderiv(vertexshader, GL_COMPILE_STATUS, &IsCompiled_VS);
-	if (IsCompiled_VS == FALSE)
-	{
-		glGetShaderiv(vertexshader, GL_INFO_LOG_LENGTH, &maxLength);
-
-		/* The maxLength includes the NULL character */
-		vertexInfoLog = (char *)malloc(maxLength);
-
-		glGetShaderInfoLog(vertexshader, maxLength, &maxLength, vertexInfoLog);
-
-		/* Handle the error in an appropriate way such as displaying a message or writing to a log file. */
-		/* In this simple program, we'll just leave */
-		free(vertexInfoLog);
-		MessageBoxA(NULL, vertexInfoLog, NULL, MB_OK);
-	}
-
-	/* Create an empty fragment shader handle */
-	fragmentshader = glCreateShader(GL_FRAGMENT_SHADER);
-
-	/* Send the fragment shader source code to GL */
-	/* Note that the source code is NULL character terminated. */
-	/* GL will automatically detect that therefore the length info can be 0 in this case (the last parameter) */
-	glShaderSource(fragmentshader, 1, (const GLchar**)&fragmentsource, 0);
-
-	/* Compile the fragment shader */
-	glCompileShader(fragmentshader);
-
-	glGetShaderiv(fragmentshader, GL_COMPILE_STATUS, &IsCompiled_FS);
-	if (IsCompiled_FS == FALSE)
-	{
-		glGetShaderiv(fragmentshader, GL_INFO_LOG_LENGTH, &maxLength);
-
-		/* The maxLength includes the NULL character */
-		fragmentInfoLog = (char *)malloc(maxLength);
-
-		glGetShaderInfoLog(fragmentshader, maxLength, &maxLength, fragmentInfoLog);
-
-		MessageBoxA(NULL, fragmentInfoLog, NULL, MB_OK);
-		/* Handle the error in an appropriate way such as displaying a message or writing to a log file. */
-		/* In this simple program, we'll just leave */
-		free(fragmentInfoLog);
-	}
-
-	/* If we reached this point it means the vertex and fragment shaders compiled and are syntax error free. */
-	/* We must link them together to make a GL shader program */
-	/* GL shader programs are monolithic. It is a single piece made of 1 vertex shader and 1 fragment shader. */
-	/* Assign our program handle a "name" */
-	shaderprogram = glCreateProgram();
-
-	/* Attach our shaders to our program */
-	glAttachShader(shaderprogram, vertexshader);
-	glAttachShader(shaderprogram, fragmentshader);
-
-	/* Bind attribute index 0 (coordinates) to in_Position and attribute index 1 (color) to in_Color */
-	/* Attribute locations must be setup before calling glLinkProgram. */
-	glBindAttribLocation(shaderprogram, 0, "in_Position");
-	glBindAttribLocation(shaderprogram, 1, "uv");
-
-	/* Link our program */
-	/* At this stage, the vertex and fragment programs are inspected, optimized and a binary code is generated for the shader. */
-	/* The binary code is uploaded to the GPU, if there is no error. */
-	glLinkProgram(shaderprogram);
-
-	/* Again, we must check and make sure that it linked. If it fails, it would mean either there is a mismatch between the vertex */
-	/* and fragment shaders. It might be that you have surpassed your GPU's abilities. Perhaps too many ALU operations or */
-	/* too many texel fetch instructions or too many interpolators or dynamic loops. */
-
-	glGetProgramiv(shaderprogram, GL_LINK_STATUS, (int *)&IsLinked);
-	if (IsLinked == FALSE)
-	{
-		/* Noticed that glGetProgramiv is used to get the length for a shader program, not glGetShaderiv. */
-		glGetProgramiv(shaderprogram, GL_INFO_LOG_LENGTH, &maxLength);
-
-		/* The maxLength includes the NULL character */
-		shaderProgramInfoLog = (char *)malloc(maxLength);
-
-		/* Notice that glGetProgramInfoLog, not glGetShaderInfoLog. */
-		glGetProgramInfoLog(shaderprogram, maxLength, &maxLength, shaderProgramInfoLog);
-
-		/* Handle the error in an appropriate way such as displaying a message or writing to a log file. */
-		/* In this simple program, we'll just leave */
-		free(shaderProgramInfoLog);
-		MessageBoxA(NULL, shaderProgramInfoLog, NULL, MB_OK);
-	}
-
-	/* Load the shader into the rendering pipeline */
-	glUseProgram(shaderprogram);
-
-	// Update the uniforms AFTER glUseProgram
-	GLuint modelview_handle = glGetUniformLocation(shaderprogram, "MV");
-	GLuint projection_handle = glGetUniformLocation(shaderprogram, "P");
-	glUniformMatrix4fv(modelview_handle, 1, GL_FALSE, &modelviewMatrix[0][0]);
-	glUniformMatrix4fv(projection_handle, 1, GL_FALSE, &projectionMatrix[0][0]);
-
-	//Load in our texture
-	GLuint texture_handle = glGetUniformLocation(shaderprogram, "tex");
-	glUniform1i(texture_handle, 0);
-
-	/* Invoke glDrawArrays telling that our data is a line loop and we want to draw 2-4 vertexes */
-	glDrawArrays(GL_QUADS, 0, 4);
-
-
-	/* Cleanup all the things we bound and allocated */
-	//glUseProgram(0);
-	glDisableVertexAttribArray(0);
-	glDisableVertexAttribArray(1);
-	glDetachShader(shaderprogram, vertexshader);
-	glDetachShader(shaderprogram, fragmentshader);
-	glDeleteProgram(shaderprogram);
-	glDeleteShader(vertexshader);
-	glDeleteShader(fragmentshader);
-	glDeleteBuffers(2, vbo);
-	glDeleteVertexArrays(1, &vao);
-	//	free(vertexsource);
-	//	free(fragmentsource);
-}
-
 int g = 0;
 int WINAPI DetourWglSwapBuffers(int* context)
 {
 	if (!g) {
 		g = gl3wInit();
-		nms_window = wglGetCurrentDC();
-		ImGui_Init(nms_window);
+		ImGui_Init(wglGetCurrentDC());
 		_overlayIsInit = true;
 	}
-
 
 	// Toggle overlay when we press F1
 	if (GetAsyncKeyState(VK_F1) != lastOverlayOpenKeyState) {
@@ -516,7 +268,7 @@ int WINAPI DetourWglSwapBuffers(int* context)
 	}
 
 
-	if (_overlayIsInit) {
+	if (overlayOpenState) {
 		
 		glEnable(GL_BLEND);
 		glBlendEquation(GL_FUNC_ADD);
@@ -525,14 +277,13 @@ int WINAPI DetourWglSwapBuffers(int* context)
 		glDisable(GL_DEPTH_TEST);
 		glEnable(GL_SCISSOR_TEST);
 		
-	
-		float pQ[9];
-		getCurrentPlayerRotations(&pQ[0]);
+		game_render::render_player_marker(39751, -4830, 122724);
 
+		/*
 		std::vector<PlayerData> othersCpy = safeGetOthers();
 		for (int i = 0; i < othersCpy.size(); i++) {
-			drawTest(pQ, othersCpy.at(i).getPos()[0], othersCpy.at(i).getPos()[1], othersCpy.at(i).getPos()[2]);
-		}
+		//	drawTest(pQ, othersCpy.at(i).getPos()[0], othersCpy.at(i).getPos()[1], othersCpy.at(i).getPos()[2]);
+		}*/
 	}
 
 
@@ -542,11 +293,11 @@ int WINAPI DetourWglSwapBuffers(int* context)
 	deltaTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()) - currentTime;
 	currentTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 	memcpy(&playerPositionLast[0], &playerPosition[0], sizeof(playerPosition));
-	getCurrentPlayerPosition(&playerPosition[0]);
+	game_value::get_player_position(&playerPosition[0]);
 
 	// Get the players region name
 	char regName[30];
-	getCurrentRegionName(regName);
+	game_value::get_player_region(regName);
 
 	// Update our vars
 	me.setPos(&playerPosition[0]);
@@ -571,22 +322,13 @@ int WINAPI DetourGlDrawArrays(GLenum mode, GLint first, GLsizei count) {
 
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
-	if (reason == DLL_PROCESS_ATTACH) { // If we just injected our dll
-		// Get handle and proc addr
-		nmsAddr = (__int64*)GetModuleHandle(NULL);
-		nmsHandle = GetCurrentProcess();
+	if (reason == DLL_PROCESS_ATTACH) {
+		game_value::init();
+
 #ifdef DO_SERVER
-		// Init client thread.
 		t_handle = CreateThread(0, NULL, ClientThread, NULL, 0, 0);
-
-
 #endif DO_SERVER
-
-
 #ifdef DO_OVERLAY
-
-
-		//Init MH to hook into opengl to render our overlays
 		if (MH_Initialize() != MH_OK)
 		{
 			MessageBoxA(NULL, "Cannot initialize Minhook. NMM will not be able to render to the game!", "Error", MB_OK);

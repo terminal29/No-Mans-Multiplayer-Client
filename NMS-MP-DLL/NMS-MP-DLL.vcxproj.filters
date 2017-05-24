@@ -36,6 +36,9 @@
     <ClCompile Include="..\..\..\MP Server\NoMansMultiplayerServer\NoMansMultiplayerServer\PlayerData.cpp">
       <Filter>Resource Files</Filter>
     </ClCompile>
+    <ClCompile Include="lodepng.cpp">
+      <Filter>Resource Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="main.h">
@@ -50,10 +53,16 @@
     <ClInclude Include="..\lib\imgui-1.49\imgui-1.49\imgui_internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="drawFuncs.h">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\MP Server\NoMansMultiplayerServer\NoMansMultiplayerServer\PlayerData.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="lodepng.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="game_value.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="game_render.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

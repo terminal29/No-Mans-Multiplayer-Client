@@ -30,20 +30,17 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
+#include "lodepng.h"
 
 // First party includes :)
 #include <PlayerData.h>
-#include "drawFuncs.h"
+#include "game_value.h"
+#include "game_render.h"
 
 static PlayerData me;
 
 #define DO_OVERLAY // Render the overlay
-#define DO_SERVER // Init the client-server backend
-
-// Functions to retrieve various bits from the game memory, ie. the juicy stuff.
-void getCurrentPlayerPosition(float* in);
-void getCurrentPlayerRotations(float* in);
-void getCurrentRegionName(char* out_regName);
+//#define DO_SERVER // Init the client-server backend
 
 // Define types for our functions we wish to detour
 typedef BOOL(WINAPI *td_wglSwapBuffers)(int*);
@@ -62,9 +59,7 @@ bool haveRenderedInWorldThisFrame = false;
 char ip[30] = "127.0.0.1:5258";
 int tryConnect = 0;
 char name[30] = "Wanderer";
-HANDLE t_handle;
-HANDLE t_mouse;
-HHOOK mousehook;
+
 bool connectStatus = false;
 std::vector<PlayerData> others;
 std::mutex mtx;
@@ -81,9 +76,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved);
 
 //Overlay variables
 void drawOverlay();
+
 int overlayOpenState = 0;
 int lastOverlayOpenKeyState = 0;
-HDC nms_window;
 int w = 0, h = 0;
 int overlayX = 250, overlayY = 350;
 
@@ -99,20 +94,9 @@ bool  prevKeyControlStates[] = { false };
 int numControlKeys = 1;
 
 //Game Variables, Memory addresses, and other working variables
-HANDLE nmsHandle;
-__int64* nmsAddr;
-char nmsExeName[] = "NMS.exe";
-__int64 posXOffs = 0x1907608;
-__int64 playerSystemBase = 0x01D9D1D0;
-__int64 psOffsets[5] = { 0x658, 0x4B0, 0x5D8, 0x460, 0x350 };
-int psNumOffsets = 5;
-int playerSystemPtr = 0;
-char playerSystemName[30] = "";
+
 float playerPosition[3];
 float playerPositionLast[3];
-
-//Custom rendering functions
-void drawTest(float* pQ, float x, float y, float z);
 
 // Used for working out velocity and display framerate
 std::chrono::milliseconds deltaTime;
