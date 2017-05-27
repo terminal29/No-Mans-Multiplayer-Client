@@ -277,7 +277,7 @@ int WINAPI DetourWglSwapBuffers(int* context)
 		glDisable(GL_DEPTH_TEST);
 		glEnable(GL_SCISSOR_TEST);
 		
-		game_render::render_player_marker(39751, -4830, 122724);
+		game_render::render_player_marker(0, 0, -5);
 
 		/*
 		std::vector<PlayerData> othersCpy = safeGetOthers();
