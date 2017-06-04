@@ -29,9 +29,11 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\MP Server\NoMansMultiplayerServer\NoMansMultiplayerServer\Communication.h" />
     <ClInclude Include="..\..\..\MP Server\NoMansMultiplayerServer\NoMansMultiplayerServer\PlayerData.h" />
     <ClInclude Include="..\lib\imgui-1.49\imgui-1.49\imconfig.h" />
     <ClInclude Include="..\lib\imgui-1.49\imgui-1.49\imgui_internal.h" />
+    <ClInclude Include="debug.h" />
     <ClInclude Include="game_value.h" />
     <ClInclude Include="imgui_impl.h" />
     <ClInclude Include="lodepng.h" />

@@ -10,6 +10,8 @@
 #include <memory>
 #include <chrono>
 #include <mutex>
+#include <iomanip>
+#include <ctime>
 
 // OS-Specific Includes
 #include <gl/gl3w.h>
@@ -36,46 +38,25 @@
 #include <PlayerData.h>
 #include "game_value.h"
 #include "game_render.h"
+#include "debug.h"
+#include <Communication.h>
 
-static PlayerData me;
-
-#define DO_OVERLAY // Render the overlay
-//#define DO_SERVER // Init the client-server backend
+#pragma comment(lib, "ws2_32.lib")
 
 // Define types for our functions we wish to detour
 typedef BOOL(WINAPI *td_wglSwapBuffers)(int*);
-typedef BOOL(WINAPI *td_glDrawArrays)(GLenum, GLint, GLsizei);
 
 // Pointers for calling original functions.
 td_wglSwapBuffers og_wglSwapBuffers = NULL;
-td_glDrawArrays og_glDrawArrays = NULL;
 
 // Overridden functions
 int WINAPI DetourWglSwapBuffers(int* context);
-int WINAPI DetourGlDrawArrays(GLenum mode, GLint first, GLsizei count);
-bool haveRenderedInWorldThisFrame = false;
-
-// Client-Server variables
-char ip[30] = "127.0.0.1:5258";
-int tryConnect = 0;
-char name[30] = "Wanderer";
-
-bool connectStatus = false;
-std::vector<PlayerData> others;
-std::mutex mtx;
-
-// So we don't end up with accessing modified vectors
-void safeSetOthers(std::vector<PlayerData> newOthers);
-std::vector<PlayerData> safeGetOthers();
 
 // Function that is run on our client-server thread
-DWORD WINAPI ClientThread(LPVOID);
+void ClientThread();
 
 // Our dll's main function which is run when it is injected, and when NMS quits.
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved);
-
-//Overlay variables
-void drawOverlay();
 
 int overlayOpenState = 0;
 int lastOverlayOpenKeyState = 0;
@@ -83,6 +64,7 @@ int w = 0, h = 0;
 int overlayX = 250, overlayY = 350;
 
 // Keycodes for the overlay
+// TODO: move to game_control.h
 bool	 prevKeyStates[]{ false, false, false, false, false, false, false, false, false, false, false, false };
 bool	  keyStates[] = { false, false, false, false, false, false, false, false, false, false, false, false };
 int	        vkCodes[] = { 0x30,  0x31,  0x32,  0x33,  0x34,  0x35,  0x36,  0x37,  0x38,  0x39,  VK_OEM_PERIOD , VK_OEM_1 };
@@ -94,7 +76,6 @@ bool  prevKeyControlStates[] = { false };
 int numControlKeys = 1;
 
 //Game Variables, Memory addresses, and other working variables
-
 float playerPosition[3];
 float playerPositionLast[3];
 
@@ -105,4 +86,19 @@ std::chrono::milliseconds currentTime;
 // Other various small funcs
 float LinearDist3f(float* a, float* b) {
 	return std::sqrtf(std::powf(a[0] - b[0], 2.0f) + std::powf(a[1] - b[1], 2.0f) + std::powf(a[2] - b[2], 2.0f));
+}
+
+// From https://www.khronos.org/opengl/wiki/Load_OpenGL_Functions#Function_Prototypes
+void *GetAnyGLFuncAddress(const char *name)
+{
+	void *p = (void *)wglGetProcAddress(name);
+	if (p == 0 ||
+		(p == (void*)0x1) || (p == (void*)0x2) || (p == (void*)0x3) ||
+		(p == (void*)-1))
+	{
+		HMODULE module = LoadLibraryA("opengl32.dll");
+		p = (void *)GetProcAddress(module, name);
+	}
+
+	return p;
 }
